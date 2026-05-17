@@ -14,8 +14,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-producti
 
 // Middleware
 app.use(cors());
-app.use(express.json());
-app.use(express.static('public'));
+   app.use(express.json());
+   app.use(express.static(__dirname));
+   app.use(express.static(path.join(__dirname)));
 
 // Простая база данных (в продакшене используйте реальную БД)
 let users = [
