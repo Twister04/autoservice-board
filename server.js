@@ -72,6 +72,7 @@ const authenticateToken = (req, res, next) => {
 // API маршруты
 
 // Регистрация
+// Регистрация
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { username, password, fullname } = req.body;
@@ -80,31 +81,47 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: 'Все поля обязательны' });
     }
 
-    if (users.find(u => u.username === username)) {
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Пароль должен быть не менее 6 символов' });
+    }
+
+    const existingUser = await User.findOne({ username });
+    if (existingUser) {
       return res.status(400).json({ error: 'Пользователь уже существует' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = {
-      id: users.length + 1,
+    
+    const newUser = new User({
       username,
       password: hashedPassword,
       fullname,
       role: 'user'
-    };
+    });
+    
+    await newUser.save();
 
-    users.push(newUser);
     const token = generateToken(newUser);
 
-    res.json({
+    res.status(201).json({
       token,
-      user: { id: newUser.id, username: newUser.username, fullname: newUser.fullname, role: newUser.role }
+      user: { 
+        id: newUser._id, 
+        username: newUser.username, 
+        fullname: newUser.fullname, 
+        role: newUser.role 
+      }
     });
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при регистрации' });
+    console.error('Ошибка регистрации:', error);
+    
+    if (error.code === 11000) {
+      return res.status(400).json({ error: 'Пользователь с таким именем уже существует' });
+    }
+    
+    res.status(500).json({ error: 'Ошибка при регистрации: ' + error.message });
   }
 });
-
 // Вход
 app.post('/api/auth/login', async (req, res) => {
   try {
