@@ -1,12 +1,8 @@
-// Backend сервер для системы управления автосервисом
-// Запуск: node server.js
-
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const path = require('path');
-const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,36 +10,25 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-producti
 
 // Middleware
 app.use(cors());
-   app.use(express.json());
-   app.use(express.static(__dirname));
-   app.use(express.static(path.join(__dirname)));
+app.use(express.json());
+app.use(express.static(__dirname));
 
-// Простая база данных (в продакшене используйте реальную БД)
+// === IN-MEMORY DATABASE ===
 let users = [
   {
     id: 1,
     username: 'admin',
-    password: '$2a$10$YkOkWf2B8UFCBKLT9uXoLeyPgEyLkPaJWtFlzXRWMYC.48cFf2b9K', // password: admin123
-    fullname: 'Администратор',
+    password: '$2a$10$YkOkWf2B8UFCBKLT9uXoLeyPgEyLkPaJWtFlzXRWMYC.48cFf2b9K',
+    fullname: 'Administrator',
     role: 'admin'
   }
 ];
 
-let jobs = [
-  {
-    id: 1,
-    client: 'Иван Петров',
-    phone: '+7-900-123-4567',
-    car: 'BMW 320i',
-    status: 'в работе',
-    description: 'Техническое обслуживание',
-    createdAt: new Date().toISOString()
-  }
-];
+let jobs = [];
+let nextJobId = 1;
+let nextUserId = 2;
 
-let nextJobId = 2;
-
-// Вспомогательные функции
+// === HELPER FUNCTIONS ===
 const generateToken = (user) => {
   return jwt.sign(
     { id: user.id, username: user.username, role: user.role },
@@ -57,88 +42,76 @@ const authenticateToken = (req, res, next) => {
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
-    return res.status(401).json({ error: 'Токен отсутствует' });
+    return res.status(401).json({ error: 'Token missing' });
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) {
-      return res.status(403).json({ error: 'Недействительный токен' });
+      return res.status(403).json({ error: 'Invalid token' });
     }
     req.user = user;
     next();
   });
 };
 
-// API маршруты
+// === API ROUTES ===
 
-// Регистрация
-// Регистрация
+// Registration
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { username, password, fullname } = req.body;
 
     if (!username || !password || !fullname) {
-      return res.status(400).json({ error: 'Все поля обязательны' });
+      return res.status(400).json({ error: 'All fields required' });
     }
 
     if (password.length < 6) {
-      return res.status(400).json({ error: 'Пароль должен быть не менее 6 символов' });
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
-    const existingUser = await User.findOne({ username });
-    if (existingUser) {
-      return res.status(400).json({ error: 'Пользователь уже существует' });
+    if (users.find(u => u.username === username)) {
+      return res.status(400).json({ error: 'User already exists' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    
-    const newUser = new User({
+    const newUser = {
+      id: nextUserId++,
       username,
       password: hashedPassword,
       fullname,
       role: 'user'
-    });
-    
-    await newUser.save();
+    };
 
+    users.push(newUser);
     const token = generateToken(newUser);
 
     res.status(201).json({
       token,
-      user: { 
-        id: newUser._id, 
-        username: newUser.username, 
-        fullname: newUser.fullname, 
-        role: newUser.role 
-      }
+      user: { id: newUser.id, username: newUser.username, fullname: newUser.fullname, role: newUser.role }
     });
   } catch (error) {
-    console.error('Ошибка регистрации:', error);
-    
-    if (error.code === 11000) {
-      return res.status(400).json({ error: 'Пользователь с таким именем уже существует' });
-    }
-    
-    res.status(500).json({ error: 'Ошибка при регистрации: ' + error.message });
+    console.error('Registration error:', error);
+    res.status(500).json({ error: 'Registration failed' });
   }
 });
-// Вход
+
+// Login
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body;
 
     if (!username || !password) {
-      return res.status(400).json({ error: 'Имя пользователя и пароль обязательны' });
+      return res.status(400).json({ error: 'Username and password required' });
     }
 
     const user = users.find(u => u.username === username);
     if (!user) {
-      return res.status(401).json({ error: 'Неверное имя пользователя или пароль' });
+      return res.status(401).json({ error: 'Invalid username or password' });
     }
 
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
-      return res.status(401).json({ error: 'Неверное имя пользователя или пароль' });
+      return res.status(401).json({ error: 'Invalid username or password' });
     }
 
     const token = generateToken(user);
@@ -147,27 +120,28 @@ app.post('/api/auth/login', async (req, res) => {
       user: { id: user.id, username: user.username, fullname: user.fullname, role: user.role }
     });
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при входе' });
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Login failed' });
   }
 });
 
-// Получить текущего пользователя
+// Get current user
 app.get('/api/auth/me', authenticateToken, (req, res) => {
   res.json({ user: req.user });
 });
 
-// Получить все заказы
+// Get all jobs
 app.get('/api/jobs', authenticateToken, (req, res) => {
   res.json(jobs);
 });
 
-// Создать новый заказ
+// Create job
 app.post('/api/jobs', authenticateToken, (req, res) => {
   try {
     const { client, phone, car, description } = req.body;
 
     if (!client || !phone || !car || !description) {
-      return res.status(400).json({ error: 'Все поля обязательны' });
+      return res.status(400).json({ error: 'All fields required' });
     }
 
     const newJob = {
@@ -176,53 +150,56 @@ app.post('/api/jobs', authenticateToken, (req, res) => {
       phone,
       car,
       description,
-      status: 'новый',
+      status: 'new',
       createdAt: new Date().toISOString()
     };
 
     jobs.push(newJob);
     res.status(201).json(newJob);
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при создании заказа' });
+    console.error('Job creation error:', error);
+    res.status(500).json({ error: 'Job creation failed' });
   }
 });
 
-// Обновить заказ
+// Update job
 app.put('/api/jobs/:id', authenticateToken, (req, res) => {
   try {
     const jobId = parseInt(req.params.id);
     const job = jobs.find(j => j.id === jobId);
 
     if (!job) {
-      return res.status(404).json({ error: 'Заказ не найден' });
+      return res.status(404).json({ error: 'Job not found' });
     }
 
     Object.assign(job, req.body);
     res.json(job);
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при обновлении заказа' });
+    console.error('Job update error:', error);
+    res.status(500).json({ error: 'Job update failed' });
   }
 });
 
-// Удалить заказ
+// Delete job
 app.delete('/api/jobs/:id', authenticateToken, (req, res) => {
   try {
     const jobId = parseInt(req.params.id);
     const index = jobs.findIndex(j => j.id === jobId);
 
     if (index === -1) {
-      return res.status(404).json({ error: 'Заказ не найден' });
+      return res.status(404).json({ error: 'Job not found' });
     }
 
     jobs.splice(index, 1);
     res.status(204).send();
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при удалении заказа' });
+    console.error('Job deletion error:', error);
+    res.status(500).json({ error: 'Job deletion failed' });
   }
 });
 
-// Запуск сервера
+// Start server
 app.listen(PORT, () => {
-  console.log(`✅ Сервер запущен на http://localhost:${PORT}`);
-  console.log(`📝 Логин по умолчанию: admin / admin123`);
+  console.log(`✅ Server running on http://localhost:${PORT}`);
+  console.log(`📝 Default login: admin / admin123`);
 });
