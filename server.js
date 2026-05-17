@@ -18,7 +18,7 @@ let users = [
   {
     id: 1,
     username: 'admin',
-    password: '$2a$10$YkOkWf2B8UFCBKLT9uXoLeyPgEyLkPaJWtFlzXRWMYC.48cFf2b9K',
+  password: '$2a$10$slYQmyNdGzin7olVN3p5Be7DlH.PKZbv5H8KnzzVgXXbVxzy86qKm',
     fullname: 'Administrator',
     role: 'admin'
   }
